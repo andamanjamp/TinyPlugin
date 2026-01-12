@@ -77,6 +77,46 @@ tinymce.PluginManager.add('aiChat', (editor) => {
         return combined;
     };
 
+    const makeDraggable = (dialogEl, handleEl) => {
+        let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+
+        const dragMouseDown = (e) => {
+            e.preventDefault();
+            // Get the mouse cursor position at startup
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+            document.onmouseup = closeDragElement;
+            // Call a function whenever the cursor moves
+            document.onmousemove = elementDrag;
+        };
+
+        const elementDrag = (e) => {
+            e.preventDefault();
+            // Calculate the new cursor position
+            pos1 = pos3 - e.clientX;
+            pos2 = pos4 - e.clientY;
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+
+            // Set the element's new position
+            dialogEl.style.top = (dialogEl.offsetTop - pos2) + "px";
+            dialogEl.style.left = (dialogEl.offsetLeft - pos1) + "px";
+            dialogEl.style.margin = "0"; // Remove TinyMCE's centering margin
+            dialogEl.style.position = "absolute";
+        };
+
+        const closeDragElement = () => {
+            // Stop moving when mouse button is released
+            document.onmouseup = null;
+            document.onmousemove = null;
+        };
+
+        if (handleEl) {
+            handleEl.onmousedown = dragMouseDown;
+            handleEl.style.cursor = "move";
+        }
+    };
+
     const updateBtnStates = (api) => {
         const canUndo = historyIndex > 0;
         const canRedo = historyIndex < stagedHistory.length - 1;
@@ -124,8 +164,30 @@ tinymce.PluginManager.add('aiChat', (editor) => {
             styleTag.id = 'ai-preview-styles';
             styleTag.innerHTML = `
                 .tox-backdrop, .tox-dialog-wrap__backdrop { display: none !important; }
-                .tox-dialog-wrap { pointer-events: none; height: 100vh !important; display: flex !important; align-items: center !important; justify-content: center !important; top: 0 !important; left: 0 !important; z-index: 1300 !important; }
-                .tox-dialog { pointer-events: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.3) !important; border: 1px solid #bbb !important; resize: both !important; overflow: hidden !important; min-width: 800px !important; min-height: 600px !important; display: flex !important; flex-direction: column !important; }
+                .tox-dialog-wrap { 
+                    pointer-events: none; 
+                    height: 100vh !important; 
+                    display: flex !important; 
+                    align-items: center !important; 
+                    justify-content: center !important; 
+                    top: 0 !important; 
+                    left: 0 !important; 
+                    z-index: 1300 !important; 
+                    overflow: hidden !important;
+                }
+                .tox-dialog { 
+                    pointer-events: auto; 
+                    box-shadow: 0 10px 40px rgba(0,0,0,0.3) !important; 
+                    border: 1px solid #bbb !important; 
+                    resize: both !important; 
+                    overflow: hidden !important; 
+                    min-width: 800px !important; 
+                    min-height: 600px !important; 
+                    display: flex !important; 
+                    flex-direction: column !important;
+                    background: #fff !important;
+                }
+                .tox-dialog__header { cursor: move !important; }
                 .tox-dialog__content-js, .tox-dialog__body, .tox-dialog__body-content, .tox-form, .tox-form__group, .tox-htmlpanel, .tox-panel, .tox-panel__body {
                     display: flex !important; flex-direction: column !important; flex: 1 1 auto !important; height: 100% !important; min-height: 0 !important; padding: 0 !important; margin: 0 !important; width: 100% !important;
                 }
@@ -151,10 +213,6 @@ tinymce.PluginManager.add('aiChat', (editor) => {
                         <div class="ai-preview-container">
                             <div class="ai-preview-header">
                                 <span class="ai-preview-count"></span>
-                                <div style="display: flex; gap: 8px;">
-                                    <button class="ai-modal-btn ai-modal-back">← Back</button>
-                                    <button class="ai-modal-btn ai-modal-forward">Forward →</button>
-                                </div>
                             </div>
                             <div class="ai-preview-iframe-wrapper">
                                 <iframe class="ai-preview-modal-iframe"></iframe>
@@ -176,6 +234,12 @@ tinymce.PluginManager.add('aiChat', (editor) => {
         });
 
         setTimeout(() => {
+            const dialogEl = document.querySelector('.tox-dialog');
+            const headerEl = document.querySelector('.tox-dialog__header');
+            if (dialogEl && headerEl) {
+                makeDraggable(dialogEl, headerEl);
+            }
+
             const backBtn = document.querySelector('.ai-modal-back');
             const forwardBtn = document.querySelector('.ai-modal-forward');
             if (backBtn) backBtn.onclick = () => { if (historyIndex > 0) { historyIndex--; updateModalPreview(); updateBtnStates(api); } };
@@ -224,9 +288,21 @@ tinymce.PluginManager.add('aiChat', (editor) => {
                 } catch (e) { console.error(e); }
                 finally { sendBtn.disabled = false; }
             };
+
+            // First time opening: check for sidebar
+            const sidebarOpen = editor.getContainer().querySelector('.tox-sidebar--sliding-open');
+            if (sidebarOpen) editor.execCommand('ToggleSidebar', false, 'aichat_sidebar');
         } else {
-            aiPanel.style.display = aiPanel.style.display === 'none' ? 'block' : 'none';
+            const isOpening = aiPanel.style.display === 'none';
+            if (isOpening) {
+                const sidebarOpen = editor.getContainer().querySelector('.tox-sidebar--sliding-open');
+                if (sidebarOpen) editor.execCommand('ToggleSidebar', false, 'aichat_sidebar');
+                aiPanel.style.display = 'block';
+            } else {
+                aiPanel.style.display = 'none';
+            }
         }
+
         if (aiPanel.style.display !== 'none') {
             aiPanel.querySelector('#ai-top-prompt').focus();
             stagedHistory = [{ html: editor.getContent(), prompt: '' }];
@@ -234,7 +310,16 @@ tinymce.PluginManager.add('aiChat', (editor) => {
         }
     };
 
-    editor.ui.registry.addButton('aiChat', { text: 'AI Chat', icon: 'comment', onAction: () => editor.execCommand('ToggleSidebar', false, 'aichat_sidebar') });
+    editor.ui.registry.addButton('aiChat', {
+        text: 'AI Chat',
+        icon: 'comment',
+        onAction: () => {
+            if (aiPanel && aiPanel.style.display !== 'none') {
+                aiPanel.style.display = 'none';
+            }
+            editor.execCommand('ToggleSidebar', false, 'aichat_sidebar');
+        }
+    });
     editor.ui.registry.addButton('ai', { text: 'AI', icon: 'code', onAction: () => toggleAiPanel() });
 
     return { getMetadata: () => ({ name: 'AI Chat Sidebar Plugin' }) };

@@ -24,7 +24,8 @@ CRITICAL JSON FORMATTING RULES:
    - Newlines must be \\n (not literal newlines)
    - Quotes must be \\"
    - Backslashes must be \\\\
-4. Format:
+4. The class name of the element must contain timestamp to prevent same class name collision on css
+5. Format:
 {
   "message": "Description of changes and the color Hex found in the code",
   "html": "Complete HTML code with proper escaping",
