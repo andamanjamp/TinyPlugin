@@ -140,16 +140,44 @@ tinymce.PluginManager.add('aiChat', (editor) => {
         const currentEntry = stagedHistory[historyIndex];
 
         if (iframe && currentEntry) {
-            const doc = iframe.contentDocument || iframe.contentWindow.document;
-            doc.open();
-            doc.write(currentEntry.html);
-            doc.close();
+            // Filter out common AI hallucinations
+            let content = currentEntry.html
+                .replace(/<script\s+src=["']script\.js["']\s*><\/script>/gi, '')
+                .replace(/<link\s+rel=["']stylesheet["']\s+href=["']style\.css["']\s*\/?>/gi, '');
+
+            const resetStyles = `
+                <base href="${window.location.origin}/">
+                <style>
+                    html, body { 
+                        margin: 0 !important; 
+                        padding: 0 !important; 
+                        width: 100% !important; 
+                        height: 100% !important;
+                        background: #fff;
+                        font-family: -apple-system, system-ui, sans-serif;
+                    }
+                    /* If the AI wraps everything in a single div, make it fill height */
+                    body > div:first-child { height: 100%; width: 100%; }
+                    * { box-sizing: border-box; }
+                </style>
+            `;
+
+            // Detect full document vs fragment
+            let finalHtml;
+            if (content.toLowerCase().includes('<head>')) {
+                finalHtml = content.replace(/<head>/i, '<head>' + resetStyles);
+            } else if (content.toLowerCase().includes('<html>')) {
+                finalHtml = content.replace(/<html>/i, '<html><head>' + resetStyles + '</head>');
+            } else {
+                finalHtml = `<!DOCTYPE html><html><head>${resetStyles}</head><body>${content}</body></html>`;
+            }
+
+            iframe.srcdoc = finalHtml;
         }
         if (countSpan) {
             countSpan.innerText = `Version ${historyIndex + 1} of ${stagedHistory.length}`;
         }
 
-        // Sync prompt to Top Panel
         const topPromptInput = document.getElementById('ai-top-prompt');
         if (topPromptInput && currentEntry) {
             topPromptInput.value = currentEntry.prompt || '';
@@ -157,9 +185,10 @@ tinymce.PluginManager.add('aiChat', (editor) => {
     };
 
     const openPreviewModal = () => {
-        editor.windowManager.open({
+        const api = editor.windowManager.open({
             title: 'AI Preview - Staging Area',
-            size: 'large',
+            width: 1200,
+            height: 800,
             body: {
                 type: 'panel',
                 items: [
@@ -167,55 +196,115 @@ tinymce.PluginManager.add('aiChat', (editor) => {
                         type: 'htmlpanel',
                         html: `
                             <style>
-                                /* Aggressively remove all backdrop blurs and fading effects */
-                                .tox-backdrop, 
-                                .tox-dialog-wrap__backdrop { 
-                                    display: none !important; 
-                                    background: transparent !important; 
-                                    backdrop-filter: none !important; 
-                                    filter: none !important; 
-                                }
+                                .tox-backdrop, .tox-dialog-wrap__backdrop { display: none !important; }
                                 .tox-dialog-wrap { 
                                     pointer-events: none; 
-                                    backdrop-filter: none !important; 
-                                    filter: none !important; 
+                                    height: 0; 
                                 }
                                 .tox-dialog { 
                                     pointer-events: auto; 
-                                    box-shadow: 0 10px 30px rgba(0,0,0,0.2) !important; 
-                                    border: 1px solid #ccc !important; 
-                                    filter: none !important; 
+                                    box-shadow: 0 10px 40px rgba(0,0,0,0.3) !important; 
+                                    border: 1px solid #bbb !important; 
+                                    resize: both !important;
+                                    overflow: hidden !important;
+                                    min-width: 800px !important;
+                                    min-height: 600px !important;
                                 }
-                                body.tox-dialog-open .tox-tinymce { 
-                                    filter: none !important; 
-                                    opacity: 1 !important; 
+                                
+                                /* Remove dialog padding completely and force full height */
+                                .tox-dialog__body { 
+                                    padding: 0 !important; 
+                                    height: 100% !important; 
+                                    display: flex !important; 
                                 }
-                                .ai-preview-container { height: 600px; display: flex; flex-direction: column; gap: 10px; }
-                                .ai-preview-iframe-wrapper { flex: 1; border: 1px solid #ddd; border-radius: 4px; overflow: auto; background: white; }
-                                .ai-preview-modal-iframe { width: 100%; height: 100%; border: none; min-height: 1000px; }
+                                .tox-dialog__body-content { 
+                                    padding: 0 !important; 
+                                    height: 100% !important; 
+                                    overflow: hidden !important; 
+                                    display: flex !important;
+                                    flex: 1 !important;
+                                }
+                                .tox-form { 
+                                    min-height: 100% !important; 
+                                    display: flex !important; 
+                                    flex-direction: column !important; 
+                                    flex: 1 !important;
+                                    width: 100% !important;
+                                }
+                                .tox-form__group { 
+                                    height: 100% !important; 
+                                    display: flex !important; 
+                                    flex-direction: column !important; 
+                                    flex: 1 !important;
+                                }
+                                
+                                body.tox-dialog-open .tox-tinymce { filter: none !important; opacity: 1 !important; }
+                                
+                                .ai-preview-container { 
+                                    height: 100%; 
+                                    display: flex; 
+                                    flex-direction: column; 
+                                    width: 100%;
+                                    background: #fff;
+                                    flex: 1;
+                                }
+                                .ai-preview-header {
+                                    display: flex; 
+                                    justify-content: space-between; 
+                                    align-items: center; 
+                                    font-size: 13px; 
+                                    color: #444; 
+                                    padding: 10px 16px;
+                                    border-bottom: 1px solid #eee;
+                                    background: #fcfcfc;
+                                    flex-shrink: 0;
+                                }
+                                .ai-preview-iframe-wrapper { 
+                                    flex: 1; 
+                                    border: none;
+                                    overflow: hidden; 
+                                    background: #fff;
+                                    display: flex;
+                                }
+                                .ai-preview-modal-iframe { 
+                                    width: 100% !important; 
+                                    height: 100% !important; 
+                                    border: none;
+                                    flex: 1;
+                                }
+                                .ai-modal-btn { background: #fff; border: 1px solid #ddd; border-radius: 4px; font-weight: 500; transition: all 0.2s; padding: 4px 12px; cursor: pointer; color: #555; font-size: 12px; }
+                                .ai-modal-btn:hover:not(:disabled) { background: #f8f9fa; border-color: #bbb; color: #333; }
+                                .ai-modal-btn:disabled { opacity: 0.3; cursor: not-allowed; }
                             </style>
                             <div class="ai-preview-container">
-                                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #666;">
-                                    <span class="ai-preview-count">Version ${historyIndex + 1} of ${stagedHistory.length}</span>
+                                <div class="ai-preview-header">
+                                    <span class="ai-preview-count" style="font-weight: 600;">Version ${historyIndex + 1} of ${stagedHistory.length}</span>
                                     <div style="display: flex; gap: 8px;">
-                                        <button class="ai-modal-btn ai-modal-back" style="padding: 6px 14px; cursor: pointer;">Back</button>
-                                        <button class="ai-modal-btn ai-modal-forward" style="padding: 6px 14px; cursor: pointer;">Forward</button>
+                                        <button class="ai-modal-btn ai-modal-back">← Back</button>
+                                        <button class="ai-modal-btn ai-modal-forward">Forward →</button>
                                     </div>
                                 </div>
                                 <div class="ai-preview-iframe-wrapper">
-                                    <iframe class="ai-preview-modal-iframe" style="width: 100%; height: 100%; border: none;"></iframe>
+                                    <iframe class="ai-preview-modal-iframe"></iframe>
                                 </div>
                             </div>
-                            <style>
-                                .ai-modal-btn { background: #fff; border: 1px solid #ccc; border-radius: 4px; font-weight: 500; transition: all 0.2s; }
-                                .ai-modal-btn:hover:not(:disabled) { background: #f0f0f0; border-color: #999; }
-                                .ai-modal-btn:disabled { opacity: 0.4; cursor: not-allowed; border-color: #eee; }
-                            </style>
                         `
                     }
                 ]
             },
             buttons: [
+                {
+                    type: 'custom',
+                    text: 'Undo',
+                    name: 'undo_btn',
+                    primary: true
+                },
+                {
+                    type: 'custom',
+                    text: 'Redo',
+                    name: 'redo_btn',
+                    primary: true
+                },
                 {
                     type: 'cancel',
                     text: 'Close'
@@ -227,7 +316,19 @@ tinymce.PluginManager.add('aiChat', (editor) => {
                 }
             ],
             onAction: (api, details) => {
-                // Not used as we use custom buttons in htmlpanel for history navigation
+                if (details.name === 'undo_btn') {
+                    if (historyIndex > 0) {
+                        historyIndex--;
+                        updateModalPreview();
+                        updateBtnStates(api);
+                    }
+                } else if (details.name === 'redo_btn') {
+                    if (historyIndex < stagedHistory.length - 1) {
+                        historyIndex++;
+                        updateModalPreview();
+                        updateBtnStates(api);
+                    }
+                }
             },
             onSubmit: (api) => {
                 const currentEntry = stagedHistory[historyIndex];
@@ -241,33 +342,46 @@ tinymce.PluginManager.add('aiChat', (editor) => {
             }
         });
 
+        const updateBtnStates = (api) => {
+            const backBtn = document.querySelector('.ai-modal-back');
+            const forwardBtn = document.querySelector('.ai-modal-forward');
+
+            const canUndo = historyIndex > 0;
+            const canRedo = historyIndex < stagedHistory.length - 1;
+
+            if (backBtn) backBtn.disabled = !canUndo;
+            if (forwardBtn) forwardBtn.disabled = !canRedo;
+
+            api.setEnabled('undo_btn', canUndo);
+            api.setEnabled('redo_btn', canRedo);
+        };
+
         // Initialize modal content & handlers
         setTimeout(() => {
             const backBtn = document.querySelector('.ai-modal-back');
             const forwardBtn = document.querySelector('.ai-modal-forward');
 
-            const updateBtnStates = () => {
-                if (backBtn) backBtn.disabled = historyIndex === 0;
-                if (forwardBtn) forwardBtn.disabled = historyIndex === stagedHistory.length - 1;
-            };
-
-            if (backBtn) backBtn.onclick = () => {
-                if (historyIndex > 0) {
-                    historyIndex--;
-                    updateModalPreview();
-                    updateBtnStates();
-                }
-            };
-            if (forwardBtn) forwardBtn.onclick = () => {
-                if (historyIndex < stagedHistory.length - 1) {
-                    historyIndex++;
-                    updateModalPreview();
-                    updateBtnStates();
-                }
-            };
+            if (backBtn) {
+                backBtn.onclick = () => {
+                    if (historyIndex > 0) {
+                        historyIndex--;
+                        updateModalPreview();
+                        updateBtnStates(api);
+                    }
+                };
+            }
+            if (forwardBtn) {
+                forwardBtn.onclick = () => {
+                    if (historyIndex < stagedHistory.length - 1) {
+                        historyIndex++;
+                        updateModalPreview();
+                        updateBtnStates(api);
+                    }
+                };
+            }
 
             updateModalPreview();
-            updateBtnStates();
+            updateBtnStates(api);
         }, 100);
     };
 
@@ -276,8 +390,9 @@ tinymce.PluginManager.add('aiChat', (editor) => {
             const editorContainer = editor.getContainer();
             aiPanel = document.createElement('div');
             aiPanel.className = 'ai-top-panel';
+            aiPanel.style.width = '100%';
             aiPanel.innerHTML = `
-                <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #fff; border-bottom: 1px solid #ddd; border-top: 1px solid #ddd; font-family: -apple-system, sans-serif;">
+                <div style="display: flex; align-items: center; min-width: 100%; gap: 12px; padding: 12px 16px; background: #fff; border-bottom: 1px solid #ddd; border-top: 1px solid #ddd; font-family: -apple-system, sans-serif;">
                     <span style="font-weight: 600; font-size: 14px; color: #333;">AI Assistant</span>
                     <textarea id="ai-top-prompt" placeholder="Ask AI to edit this page..." style="flex: 1; border: 1px solid #ccc; border-radius: 6px; padding: 8px 12px; font-size: 14px; height: 40px; resize: none;"></textarea>
                     <button id="ai-top-send" style="background: #007bff; color: #fff; border: none; border-radius: 6px; padding: 0 20px; font-weight: 600; cursor: pointer; height: 40px;">Send</button>
@@ -369,7 +484,7 @@ tinymce.PluginManager.add('aiChat', (editor) => {
             const prompt = aiPanel.querySelector('#ai-top-prompt');
             if (prompt) prompt.focus();
             // Reset staging state on open
-            stagedHistory = [editor.getContent()];
+            stagedHistory = [{ html: editor.getContent(), prompt: '' }];
             historyIndex = 0;
         }
     };
