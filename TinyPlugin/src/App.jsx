@@ -14,7 +14,7 @@ function App() {
         },
 
         plugins: 'code aiChat',
-        toolbar: 'undo redo | code | aiChat',
+        toolbar: 'undo redo | code | aiChat ai',
         height: '100vh',
         width: '100vw',
         license_key: 'gpl',
