@@ -32,6 +32,12 @@ CRITICAL JSON FORMATTING RULES:
   "js": "Complete JavaScript code with proper escaping"
 }
 
+IMPORTANT: 
+- Do NOT include <script src="script.js"> or <link rel="stylesheet" href="style.css"> tags.
+- Design: ALWAYS create full-width, edge-to-edge layouts unless a specific component is requested.
+- Scaling: Ensure the main container/body fills the entire viewport width (100%) and height (100vh) where appropriate. Avoid small fixed-width "containers" in the middle of the page.
+- All logic and styles must be in the "js" and "css" fields or inlined if necessary.
+
 Do NOT wrap in markdown code blocks.
 ONLY return the raw JSON object.`;
 
