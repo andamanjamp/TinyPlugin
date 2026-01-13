@@ -115,6 +115,7 @@ Task: Please update the code based on my previous requests. Return ONLY valid JS
         const responseText = msg.content[0].text;
 
         console.log("Raw response length:", responseText.length);
+        console.log("Raw response:", responseText);
 
         // AGGRESSIVE MARKDOWN REMOVAL
         let jsonText = responseText.trim();

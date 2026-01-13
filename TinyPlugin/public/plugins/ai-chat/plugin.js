@@ -145,10 +145,11 @@ tinymce.PluginManager.add('aiChat', (editor) => {
 
     const updateModalPreview = () => {
         const iframe = document.querySelector('.ai-preview-modal-iframe');
+        const textarea = document.querySelector('.ai-preview-htmlarea');
         const countSpan = document.querySelector('.ai-preview-count');
         const currentEntry = stagedHistory[historyIndex];
 
-        if (iframe && currentEntry) {
+            if (iframe && currentEntry) {
             let content = currentEntry.html
                 .replace(/<script\s+src=["']script\.js["']\s*><\/script>/gi, '')
                 .replace(/<link\s+rel=["']stylesheet["']\s+href=["']style\.css["']\s*\/?>/gi, '');
@@ -168,6 +169,10 @@ tinymce.PluginManager.add('aiChat', (editor) => {
             iframe.style.setProperty('height', '100%', 'important');
             iframe.style.setProperty('display', 'block', 'important');
             iframe.srcdoc = finalHtml;
+            if (textarea) {
+                textarea.value = currentEntry.html || '';
+                textarea.style.setProperty('display', 'none', 'important');
+            }
         }
         if (countSpan) countSpan.innerText = `Version ${historyIndex + 1} of ${stagedHistory.length}`;
     };
@@ -210,6 +215,7 @@ tinymce.PluginManager.add('aiChat', (editor) => {
                 .ai-preview-header { display: flex !important; justify-content: space-between !important; align-items: center !important; padding: 10px 16px !important; border-bottom: 1px solid #eee !important; background: #fcfcfc !important; flex-shrink: 0 !important; }
                 .ai-preview-iframe-wrapper { position: relative !important; flex: 1 1 auto !important; height: 100% !important; min-height: 400px !important; border: none !important; overflow: hidden !important; background: #fff !important; }
                 .ai-preview-modal-iframe { position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; border: none !important; display: block !important; }
+                .ai-preview-htmlarea { position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; border: none !important; display: none !important; padding: 12px !important; box-sizing: border-box !important; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Courier New', monospace !important; font-size: 13px !important; white-space: pre-wrap !important; overflow: auto !important; }
                 .ai-modal-btn { background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 4px 12px; cursor: pointer; color: #555; }
                 .ai-modal-btn:disabled { opacity: 0.3; cursor: not-allowed; }
             `;
@@ -231,11 +237,13 @@ tinymce.PluginManager.add('aiChat', (editor) => {
                             </div>
                             <div class="ai-preview-iframe-wrapper">
                                 <iframe class="ai-preview-modal-iframe"></iframe>
+                                <textarea class="ai-preview-htmlarea" readonly></textarea>
                             </div>
                         </div>`
                 }]
             },
             buttons: [
+                { type: 'custom', text: 'Toggle View', name: 'toggle_view' },
                 { type: 'custom', text: 'Undo', name: 'undo_btn', primary: true },
                 { type: 'custom', text: 'Redo', name: 'redo_btn', primary: true },
                 { type: 'cancel', text: 'Discard' },
@@ -245,6 +253,23 @@ tinymce.PluginManager.add('aiChat', (editor) => {
             onAction: (api, details) => {
                 if (details.name === 'undo_btn' && historyIndex > 0) { historyIndex--; updateModalPreview(); updateBtnStates(api); }
                 else if (details.name === 'redo_btn' && historyIndex < stagedHistory.length - 1) { historyIndex++; updateModalPreview(); updateBtnStates(api); }
+                else if (details.name === 'toggle_view') {
+                    const iframe = document.querySelector('.ai-preview-modal-iframe');
+                    const textarea = document.querySelector('.ai-preview-htmlarea');
+                    if (!iframe || !textarea) return;
+                    const iframeDisplay = window.getComputedStyle(iframe).getPropertyValue('display');
+                    const isIframeVisible = iframeDisplay !== 'none';
+                    if (isIframeVisible) {
+                        // switch to HTML view — force display with !important to override stylesheet
+                        iframe.style.setProperty('display', 'none', 'important');
+                        textarea.style.setProperty('display', 'block', 'important');
+                        textarea.value = stagedHistory[historyIndex]?.html || '';
+                    } else {
+                        // switch to appearance (iframe) view
+                        textarea.style.setProperty('display', 'none', 'important');
+                        iframe.style.setProperty('display', 'block', 'important');
+                    }
+                }
             }
         });
 
@@ -281,9 +306,11 @@ tinymce.PluginManager.add('aiChat', (editor) => {
                 const prompt = aiPanel.querySelector('#ai-top-prompt').value.trim();
                 if (!prompt) return;
                 const sendBtn = aiPanel.querySelector('#ai-top-send');
+                const originalText = sendBtn.textContent;
                 sendBtn.disabled = true;
+                sendBtn.textContent = 'Sending...';
 
-                    try {
+                try {
                     const currentHtml = getEditorIframeHtml();
                     const response = await fetch('http://localhost:3000/api/code/update', {
                         method: 'POST',
@@ -301,7 +328,7 @@ tinymce.PluginManager.add('aiChat', (editor) => {
                         else openPreviewModal();
                     }
                 } catch (e) { console.error(e); }
-                finally { sendBtn.disabled = false; }
+                finally { sendBtn.disabled = false; sendBtn.textContent = originalText; }
             };
 
             // First time opening: check for sidebar
