@@ -1,6 +1,6 @@
 tinymce.PluginManager.add('aiChat', (editor) => {
     console.log('AI Chat Plugin - Loading');
-    
+
     // Helper: return the iframe full HTML if available, otherwise fall back to editor.getContent()
     const getEditorIframeHtml = () => {
         try {
@@ -23,7 +23,7 @@ tinymce.PluginManager.add('aiChat', (editor) => {
             container.innerHTML = `
                 <div class="ai-chat-sidebar" style="display: flex; flex-direction: column; height: 100%; width: 350px; font-family: -apple-system, sans-serif; background: #fff; border-left: 1px solid #eee;">
                     <div class="ai-chat-header" style="padding: 12px 16px; border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: space-between;">
-                        <h2 style="margin: 0; font-size: 16px; font-weight: 600; color: #333;">AI Assistant</h2>
+                        <h2 style="margin: 0; font-size: 16px; font-weight: 600; color: #333;">Chat with AI</h2>
                         <button id="ai-chat-undo" style="background: #f8f9fa; border: 1px solid #ddd; border-radius: 4px; padding: 4px 8px; cursor: pointer;">Undo</button>
                     </div>
                     <div id="ai-chat-messages" style="flex: 1; overflow-y: auto; padding: 16px; background: #f9f9f9; display: flex; flex-direction: column; gap: 12px;">
@@ -140,7 +140,7 @@ tinymce.PluginManager.add('aiChat', (editor) => {
         const countSpan = document.querySelector('.ai-preview-count');
         const currentEntry = stagedHistory[historyIndex];
 
-            if (iframe && currentEntry) {
+        if (iframe && currentEntry) {
             let content = currentEntry.html
                 .replace(/<script\s+src=["']script\.js["']\s*><\/script>/gi, '')
                 .replace(/<link\s+rel=["']stylesheet["']\s+href=["']style\.css["']\s*\/?>/gi, '');
@@ -290,6 +290,10 @@ tinymce.PluginManager.add('aiChat', (editor) => {
                         iframe.style.setProperty('display', 'block', 'important');
                     }
                 }
+            },
+            onClose: () => {
+                const styleTag = document.getElementById('ai-preview-styles');
+                if (styleTag) styleTag.remove();
             }
         });
 
@@ -310,7 +314,7 @@ tinymce.PluginManager.add('aiChat', (editor) => {
             aiPanel = document.createElement('div');
             aiPanel.innerHTML = `
                 <div style="display: flex; align-items: center; gap:12px; padding:12px; background:#fff; border:1px solid #ddd;">
-                    <span style="font-weight:600;">AI</span>
+                    <span style="font-weight:600;">AI Assistant</span>
                     <textarea id="ai-top-prompt" style="flex:1; height:40px; border-radius:4px; border:1px solid #ccc;"></textarea>
                     <button id="ai-top-send" style="background:#007bff; color:#fff; border:none; padding:8px 16px; border-radius:4px; cursor:pointer;">Send</button>
                 </div>`;
@@ -369,8 +373,8 @@ tinymce.PluginManager.add('aiChat', (editor) => {
     };
 
     editor.ui.registry.addButton('aiChat', {
-        text: 'AI Chat',
         icon: 'comment',
+        tooltip: 'Chat with AI',
         onAction: () => {
             if (aiPanel && aiPanel.style.display !== 'none') {
                 aiPanel.style.display = 'none';
@@ -378,7 +382,7 @@ tinymce.PluginManager.add('aiChat', (editor) => {
             editor.execCommand('ToggleSidebar', false, 'aichat_sidebar');
         }
     });
-    editor.ui.registry.addButton('ai', { text: 'AI', icon: 'code', onAction: () => toggleAiPanel() });
+    editor.ui.registry.addButton('ai', { tooltip: 'AI Assistant', icon: 'ai-prompt', onAction: () => toggleAiPanel() });
 
     return { getMetadata: () => ({ name: 'AI Chat Sidebar Plugin' }) };
 });

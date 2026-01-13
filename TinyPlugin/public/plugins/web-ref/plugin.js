@@ -160,7 +160,7 @@ tinymce.PluginManager.add('webRef', (editor) => {
     };
 
     editor.ui.registry.addButton('webRef', {
-        icon: 'image',
+        icon: 'upload',
         tooltip: 'Generate from Image Reference',
         onAction: () => openWebRefDialog()
     });

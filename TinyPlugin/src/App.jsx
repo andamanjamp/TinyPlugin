@@ -15,7 +15,7 @@ function App() {
         },
 
         plugins: 'code aiChat image webRef',
-        toolbar: 'undo redo | code | aiChat ai | image webRef',
+        toolbar: 'undo redo | code | aiChat|ai|image|webRef',
         height: '100vh',
         width: '100vw',
         license_key: 'gpl',
