@@ -1,6 +1,19 @@
 tinymce.PluginManager.add('aiChat', (editor) => {
     console.log('AI Chat Plugin - Loading');
-
+    
+    // Helper: return the iframe full HTML if available, otherwise fall back to editor.getContent()
+    const getEditorIframeHtml = () => {
+        try {
+            const iframeId = `${editor.id || (typeof editor.getId === 'function' ? editor.getId() : '') || 'editor'}_ifr`;
+            const iframe = document.getElementById(iframeId) || document.querySelector(`iframe#${iframeId}`) || document.querySelector('iframe');
+            if (iframe && iframe.contentDocument) {
+                return iframe.contentDocument.documentElement.outerHTML || iframe.contentDocument.documentElement.innerHTML || editor.getContent();
+            }
+        } catch (e) {
+            console.warn('Could not read iframe content for AI input', e);
+        }
+        return editor.getContent();
+    };
     // Add Sidebar
     editor.ui.registry.addSidebar('aichat_sidebar', {
         tooltip: 'AI Chat Assistant',
@@ -47,12 +60,14 @@ tinymce.PluginManager.add('aiChat', (editor) => {
                     promptInput.value = '';
                     addMessage(prompt, 'user');
                     sendBtn.disabled = true;
-
+                    sendBtn.innerText = 'Sending...';
+                    sendBtn.style.cursor = 'not-allowed';
                     try {
+                        const currentHtml = getEditorIframeHtml();
                         const response = await fetch('http://localhost:3000/api/code/update', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ history: [{ role: 'user', content: prompt }], currentHtml: editor.getContent() })
+                            body: JSON.stringify({ history: [{ role: 'user', content: prompt }], currentHtml })
                         });
                         const result = await response.json();
                         if (result.success) {
@@ -60,7 +75,7 @@ tinymce.PluginManager.add('aiChat', (editor) => {
                             addMessage(result.message || 'Updated.', 'ai');
                         }
                     } catch (e) { console.error(e); }
-                    finally { sendBtn.disabled = false; }
+                    finally { sendBtn.disabled = false; sendBtn.innerText = 'Send'; sendBtn.style.cursor = 'pointer'; }
                 };
             }, 0);
         }
@@ -268,8 +283,8 @@ tinymce.PluginManager.add('aiChat', (editor) => {
                 const sendBtn = aiPanel.querySelector('#ai-top-send');
                 sendBtn.disabled = true;
 
-                try {
-                    const currentHtml = historyIndex >= 0 ? stagedHistory[historyIndex].html : editor.getContent();
+                    try {
+                    const currentHtml = getEditorIframeHtml();
                     const response = await fetch('http://localhost:3000/api/code/update', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -278,7 +293,7 @@ tinymce.PluginManager.add('aiChat', (editor) => {
                     const result = await response.json();
                     if (result.success) {
                         const combined = combineContent(result);
-                        if (stagedHistory.length === 0) stagedHistory.push({ html: editor.getContent(), prompt: '' });
+                        if (stagedHistory.length === 0) stagedHistory.push({ html: getEditorIframeHtml(), prompt: '' });
                         stagedHistory = stagedHistory.slice(0, historyIndex + 1);
                         stagedHistory.push({ html: combined, prompt: prompt });
                         historyIndex = stagedHistory.length - 1;
@@ -305,7 +320,7 @@ tinymce.PluginManager.add('aiChat', (editor) => {
 
         if (aiPanel.style.display !== 'none') {
             aiPanel.querySelector('#ai-top-prompt').focus();
-            stagedHistory = [{ html: editor.getContent(), prompt: '' }];
+            stagedHistory = [{ html: getEditorIframeHtml(), prompt: '' }];
             historyIndex = 0;
         }
     };
