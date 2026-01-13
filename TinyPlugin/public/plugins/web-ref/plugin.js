@@ -4,6 +4,155 @@ tinymce.PluginManager.add('webRef', (editor) => {
     const openWebRefDialog = () => {
         let base64Image = null;
 
+        const makeDraggable = (dialogEl, handleEl) => {
+            let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+            const dragMouseDown = (e) => {
+                e.preventDefault();
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                document.onmouseup = closeDragElement;
+                document.onmousemove = elementDrag;
+            };
+            const elementDrag = (e) => {
+                e.preventDefault();
+                pos1 = pos3 - e.clientX;
+                pos2 = pos4 - e.clientY;
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                dialogEl.style.top = (dialogEl.offsetTop - pos2) + "px";
+                dialogEl.style.left = (dialogEl.offsetLeft - pos1) + "px";
+                dialogEl.style.margin = "0";
+                dialogEl.style.position = "absolute";
+            };
+            const closeDragElement = () => {
+                document.onmouseup = null;
+                document.onmousemove = null;
+            };
+            if (handleEl) {
+                handleEl.onmousedown = dragMouseDown;
+                handleEl.style.cursor = "move";
+            }
+        };
+
+        const openPreviewModal = (generatedHtml) => {
+            let styleTag = document.getElementById('webref-preview-styles');
+            if (!styleTag) {
+                styleTag = document.createElement('style');
+                styleTag.id = 'webref-preview-styles';
+                styleTag.innerHTML = `
+                    .tox-backdrop, .tox-dialog-wrap__backdrop { display: none !important; }
+                    .tox-dialog-wrap { 
+                        pointer-events: none; 
+                        height: 100vh !important; 
+                        display: flex !important; 
+                        align-items: center !important; 
+                        justify-content: center !important; 
+                        top: 0 !important; 
+                        left: 0 !important; 
+                        z-index: 1300 !important; 
+                        overflow: hidden !important;
+                    }
+                    .tox-dialog { 
+                        pointer-events: auto; 
+                        box-shadow: 0 10px 40px rgba(0,0,0,0.3) !important; 
+                        border: 1px solid #bbb !important; 
+                        resize: both !important; 
+                        overflow: hidden !important; 
+                        min-width: 800px !important; 
+                        min-height: 600px !important; 
+                        display: flex !important; 
+                        flex-direction: column !important;
+                        background: #fff !important;
+                    }
+                    .tox-dialog__header { cursor: move !important; }
+                    .tox-dialog__content-js, .tox-dialog__body, .tox-dialog__body-content, .tox-form, .tox-form__group, .tox-htmlpanel, .tox-panel, .tox-panel__body {
+                        display: flex !important; flex-direction: column !important; flex: 1 1 auto !important; height: 100% !important; min-height: 0 !important; padding: 0 !important; margin: 0 !important; width: 100% !important;
+                    }
+                    .ai-preview-container { flex: 1 1 auto !important; height: 100% !important; display: flex !important; flex-direction: column !important; width: 100% !important; background: #fff; overflow: hidden; }
+                    .ai-preview-header { display: flex !important; justify-content: space-between !important; align-items: center !important; padding: 10px 16px !important; border-bottom: 1px solid #eee !important; background: #fcfcfc !important; flex-shrink: 0 !important; }
+                    .ai-preview-iframe-wrapper { position: relative !important; flex: 1 1 auto !important; height: 100% !important; min-height: 400px !important; border: none !important; overflow: hidden !important; background: #fff !important; }
+                    .ai-preview-modal-iframe { position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; border: none !important; display: block !important; }
+                    .ai-preview-htmlarea { position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; border: none !important; display: none !important; padding: 12px !important; box-sizing: border-box !important; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Courier New', monospace !important; font-size: 13px !important; white-space: pre-wrap !important; overflow: auto !important; }
+                `;
+                document.head.appendChild(styleTag);
+            }
+
+            editor.windowManager.open({
+                title: 'WebRef Preview',
+                width: 1200,
+                height: 800,
+                body: {
+                    type: 'panel',
+                    items: [{
+                        type: 'htmlpanel',
+                        html: `
+                            <div class="ai-preview-container">
+                                <div class="ai-preview-header">
+                                    <span style="font-weight:600; color:#444;">Generated Result</span>
+                                </div>
+                                <div class="ai-preview-iframe-wrapper">
+                                    <iframe class="ai-preview-modal-iframe"></iframe>
+                                    <textarea class="ai-preview-htmlarea" readonly></textarea>
+                                </div>
+                            </div>`
+                    }]
+                },
+                buttons: [
+                    { type: 'custom', text: 'Toggle View', name: 'toggle_view' },
+                    { type: 'cancel', text: 'Discard' },
+                    { type: 'submit', text: 'Apply', primary: true }
+                ],
+                onSubmit: (api) => {
+                    editor.undoManager.transact(() => {
+                        editor.setContent(generatedHtml);
+                    });
+                    editor.notificationManager.open({ text: 'Content applied.', type: 'success', timeout: 2000 });
+                    api.close();
+                },
+                onAction: (api, details) => {
+                    if (details.name === 'toggle_view') {
+                        const iframe = document.querySelector('.ai-preview-modal-iframe');
+                        const textarea = document.querySelector('.ai-preview-htmlarea');
+                        if (!iframe || !textarea) return;
+                        if (iframe.style.display !== 'none') {
+                            iframe.style.setProperty('display', 'none', 'important');
+                            textarea.style.setProperty('display', 'block', 'important');
+                            textarea.value = generatedHtml;
+                        } else {
+                            textarea.style.setProperty('display', 'none', 'important');
+                            iframe.style.setProperty('display', 'block', 'important');
+                        }
+                    }
+                },
+                onClose: () => {
+                    const styleTag = document.getElementById('webref-preview-styles');
+                    if (styleTag) styleTag.remove();
+                }
+            });
+
+            setTimeout(() => {
+                const dialogEl = document.querySelector('.tox-dialog');
+                const headerEl = document.querySelector('.tox-dialog__header');
+                if (dialogEl && headerEl) makeDraggable(dialogEl, headerEl);
+
+                const iframe = document.querySelector('.ai-preview-modal-iframe');
+                if (iframe) {
+                    const resetStyles = `
+                        <base href="${window.location.origin}/">
+                        <script src="https://cdn.tailwindcss.com"></script>
+                        <style>html,body{margin:0;padding:0;width:100%;height:100%;background:#fff;}body>div:first-child{height:100%;width:100%;}*{box-sizing:border-box;}</style>
+                    `;
+                    let content = generatedHtml || '';
+                    if (!content.toLowerCase().includes('<head>')) {
+                        content = `<!DOCTYPE html><html><head>${resetStyles}</head><body>${content}</body></html>`;
+                    } else {
+                        content = content.replace(/<head>/i, '<head>' + resetStyles);
+                    }
+                    iframe.srcdoc = content;
+                }
+            }, 100);
+        };
+
         const api = editor.windowManager.open({
             title: 'Generate Web from Image',
             width: 600,
@@ -81,15 +230,9 @@ tinymce.PluginManager.add('webRef', (editor) => {
                             if (res.js) combined += `\n<script>\n${res.js}\n</script>`;
                             return combined;
                         };
-                        editor.setContent(combineContent(result));
-
-                        editor.notificationManager.open({
-                            text: 'Web layout generated successfully!',
-                            type: 'success',
-                            timeout: 3000
-                        });
-
-                        api.close();
+                        const generatedCode = combineContent(result);
+                        api.close(); // Close upload dialog
+                        openPreviewModal(generatedCode); // Open preview dialog
                     } else {
                         throw new Error(result.message || 'Generation failed');
                     }
