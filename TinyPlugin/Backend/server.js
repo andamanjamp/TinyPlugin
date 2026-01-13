@@ -25,19 +25,20 @@ CRITICAL JSON FORMATTING RULES:
    - Quotes must be \\"
    - Backslashes must be \\\\
 4. The class name of the element must contain timestamp to prevent same class name collision on css
-5. Format:
+5. if the source code contain any image, you must remember the alt text of the image as the image name, then if user want to use the image, you must use the image alt text as the image name
+6. Format:
 {
   "message": "Description of changes and the color Hex found in the code",
   "html": "Complete HTML code with proper escaping",
   "css": "Complete CSS code with proper escaping",
   "js": "Complete JavaScript code with proper escaping"
 }
-
 IMPORTANT: 
 - Do NOT include <script src="script.js"> or <link rel="stylesheet" href="style.css"> tags.
 - Design: ALWAYS create full-width, edge-to-edge layouts unless a specific component is requested.
 - Scaling: Ensure the main container/body fills the entire viewport width (100%) and height (100vh) where appropriate. Avoid small fixed-width "containers" in the middle of the page.
 - All logic and styles must be in the "js" and "css" fields or inlined if necessary.
+- Use only the code part that must be changed or added. Do NOT include any code that is not necessary.
 
 Do NOT wrap in markdown code blocks.
 ONLY return the raw JSON object.`;
