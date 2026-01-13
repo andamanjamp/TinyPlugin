@@ -132,16 +132,7 @@ tinymce.PluginManager.add('aiChat', (editor) => {
         }
     };
 
-    const updateBtnStates = (api) => {
-        const canUndo = historyIndex > 0;
-        const canRedo = historyIndex < stagedHistory.length - 1;
-        api.setEnabled('undo_btn', canUndo);
-        api.setEnabled('redo_btn', canRedo);
-        const backBtn = document.querySelector('.ai-modal-back');
-        const forwardBtn = document.querySelector('.ai-modal-forward');
-        if (backBtn) backBtn.disabled = !canUndo;
-        if (forwardBtn) forwardBtn.disabled = !canRedo;
-    };
+    // (undo/redo buttons removed from preview dialog)
 
     const updateModalPreview = () => {
         const iframe = document.querySelector('.ai-preview-modal-iframe');
@@ -244,16 +235,45 @@ tinymce.PluginManager.add('aiChat', (editor) => {
             },
             buttons: [
                 { type: 'custom', text: 'Toggle View', name: 'toggle_view' },
-                { type: 'custom', text: 'Undo', name: 'undo_btn', primary: true },
-                { type: 'custom', text: 'Redo', name: 'redo_btn', primary: true },
                 { type: 'cancel', text: 'Discard' },
                 { type: 'submit', text: 'Apply', primary: true }
             ],
-            onSubmit: (api) => { editor.setContent(stagedHistory[historyIndex].html); api.close(); },
+            onSubmit: (api) => {
+                try {
+                    // Ensure historyIndex is within range
+                    if (historyIndex < 0) historyIndex = 0;
+                    if (historyIndex >= stagedHistory.length) historyIndex = stagedHistory.length - 1;
+
+                    let html = stagedHistory[historyIndex] && stagedHistory[historyIndex].html;
+                    if (!html && stagedHistory.length > 0) html = stagedHistory[0].html;
+                    if (!html) {
+                        // Fallback to iframe HTML
+                        html = getEditorIframeHtml();
+                    }
+
+                    if (!html) {
+                        console.warn('AI Preview Apply: no HTML found to apply (stagedHistory, iframe fallback empty)');
+                        // still close dialog to avoid blocking UI
+                        api.close();
+                        return;
+                    }
+
+                    // Apply the content inside an undo transaction so TinyMCE undo/redo works
+                    editor.undoManager.transact(() => {
+                        try {
+                            editor.setContent(html);
+                        } catch (err) {
+                            console.error('Failed to set content on editor during Apply:', err);
+                        }
+                    });
+
+                    // Call the editor save command so existing save handlers run
+                    try { editor.execCommand && editor.execCommand('mceSave'); } catch (e) { console.error('mceSave failed', e); }
+                } catch (e) { console.error('AI Preview Apply error', e); }
+                api.close();
+            },
             onAction: (api, details) => {
-                if (details.name === 'undo_btn' && historyIndex > 0) { historyIndex--; updateModalPreview(); updateBtnStates(api); }
-                else if (details.name === 'redo_btn' && historyIndex < stagedHistory.length - 1) { historyIndex++; updateModalPreview(); updateBtnStates(api); }
-                else if (details.name === 'toggle_view') {
+                if (details.name === 'toggle_view') {
                     const iframe = document.querySelector('.ai-preview-modal-iframe');
                     const textarea = document.querySelector('.ai-preview-htmlarea');
                     if (!iframe || !textarea) return;
@@ -280,12 +300,8 @@ tinymce.PluginManager.add('aiChat', (editor) => {
                 makeDraggable(dialogEl, headerEl);
             }
 
-            const backBtn = document.querySelector('.ai-modal-back');
-            const forwardBtn = document.querySelector('.ai-modal-forward');
-            if (backBtn) backBtn.onclick = () => { if (historyIndex > 0) { historyIndex--; updateModalPreview(); updateBtnStates(api); } };
-            if (forwardBtn) forwardBtn.onclick = () => { if (historyIndex < stagedHistory.length - 1) { historyIndex++; updateModalPreview(); updateBtnStates(api); } };
+            // initialize preview
             updateModalPreview();
-            updateBtnStates(api);
         }, 100);
     };
 
