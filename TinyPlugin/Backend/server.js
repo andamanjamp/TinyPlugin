@@ -15,6 +15,87 @@ const anthropic = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY
 });
 
+// ⭐ PRICING (USD per 1M tokens) - Update these as needed
+const PRICING = {
+    'claude-haiku-4-5-20251001': {
+        input: 0.80,    // $0.80 per 1M input tokens
+        output: 4.00    // $4.00 per 1M output tokens
+    },
+    'claude-sonnet-4-5-20250929': {
+        input: 3.00,    // $3.00 per 1M input tokens
+        output: 15.00   // $15.00 per 1M output tokens
+    },
+    'claude-opus-4-1-20250514': {
+        input: 15.00,   // $15.00 per 1M input tokens
+        output: 75.00   // $75.00 per 1M output tokens
+    }
+};
+
+// ⭐ Exchange rate (USD to THB) - Update this regularly or fetch from API
+const USD_TO_THB = 33.50; // 1 USD = 33.50 THB (example rate)
+
+// ⭐ Token usage tracker
+class TokenTracker {
+    constructor() {
+        this.sessions = new Map();
+    }
+
+    trackRequest(sessionId, usage, model) {
+        if (!this.sessions.has(sessionId)) {
+            this.sessions.set(sessionId, {
+                requests: 0,
+                totalInputTokens: 0,
+                totalOutputTokens: 0,
+                totalCostUSD: 0,
+                totalCostTHB: 0,
+                model: model
+            });
+        }
+
+        const session = this.sessions.get(sessionId);
+        const pricing = PRICING[model] || PRICING['claude-haiku-4-5-20251001'];
+
+        const inputCost = (usage.input_tokens / 1000000) * pricing.input;
+        const outputCost = (usage.output_tokens / 1000000) * pricing.output;
+        const requestCostUSD = inputCost + outputCost;
+        const requestCostTHB = requestCostUSD * USD_TO_THB;
+
+        session.requests++;
+        session.totalInputTokens += usage.input_tokens;
+        session.totalOutputTokens += usage.output_tokens;
+        session.totalCostUSD += requestCostUSD;
+        session.totalCostTHB += requestCostTHB;
+
+        return {
+            requestTokens: {
+                input: usage.input_tokens,
+                output: usage.output_tokens,
+                total: usage.input_tokens + usage.output_tokens
+            },
+            requestCost: {
+                usd: requestCostUSD,
+                thb: requestCostTHB
+            },
+            sessionTotals: {
+                requests: session.requests,
+                totalTokens: session.totalInputTokens + session.totalOutputTokens,
+                totalCostUSD: session.totalCostUSD,
+                totalCostTHB: session.totalCostTHB
+            }
+        };
+    }
+
+    getSessionStats(sessionId) {
+        return this.sessions.get(sessionId) || null;
+    }
+
+    clearSession(sessionId) {
+        this.sessions.delete(sessionId);
+    }
+}
+
+const tokenTracker = new TokenTracker();
+
 const SYSTEM_PROMPT = `You are a web development assistant. 
 
 CRITICAL JSON FORMATTING RULES:
@@ -85,14 +166,59 @@ app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
-        service: 'Claude API Service'
+        service: 'Claude API Service',
+        exchangeRate: `1 USD = ${USD_TO_THB} THB`
+    });
+});
+
+// ⭐ NEW: Get token usage stats
+app.get('/api/usage/:sessionId', (req, res) => {
+    const { sessionId } = req.params;
+    const stats = tokenTracker.getSessionStats(sessionId);
+
+    if (!stats) {
+        return res.json({
+            success: true,
+            message: 'No usage data for this session',
+            usage: null
+        });
+    }
+
+    res.json({
+        success: true,
+        usage: {
+            model: stats.model,
+            requests: stats.requests,
+            tokens: {
+                input: stats.totalInputTokens,
+                output: stats.totalOutputTokens,
+                total: stats.totalInputTokens + stats.totalOutputTokens
+            },
+            cost: {
+                usd: stats.totalCostUSD.toFixed(6),
+                thb: stats.totalCostTHB.toFixed(2)
+            },
+            averageTokensPerRequest: Math.round(
+                (stats.totalInputTokens + stats.totalOutputTokens) / stats.requests
+            )
+        }
+    });
+});
+
+// ⭐ NEW: Clear session usage
+app.delete('/api/usage/:sessionId', (req, res) => {
+    const { sessionId } = req.params;
+    tokenTracker.clearSession(sessionId);
+    res.json({
+        success: true,
+        message: 'Session usage data cleared'
     });
 });
 
 // Main code update endpoint
 app.post('/api/code/update', async (req, res) => {
     try {
-        const { history, currentHtml, currentCss, currentJs } = req.body;
+        const { history, currentHtml, currentCss, currentJs, sessionId } = req.body;
 
         // Validation
         if (!history || !Array.isArray(history)) {
@@ -101,6 +227,9 @@ app.post('/api/code/update', async (req, res) => {
                 message: 'history must be an array'
             });
         }
+
+        // Use sessionId or generate one
+        const session = sessionId || `session_${Date.now()}`;
 
         // Build messages array
         const messages = [
@@ -124,28 +253,42 @@ Task: Please update the code based on my previous requests. Return ONLY valid JS
             }
         ];
 
-        console.log('Sending request to Claude API...');
+        const model = process.env.CLAUDE_MODEL || "claude-haiku-4-5-20251001";
+        console.log(`Sending request to Claude API (${model})...`);
 
         // Call Claude API
         const msg = await anthropic.messages.create({
-            model: process.env.CLAUDE_MODEL || "claude-3-haiku-20240307",
-            max_tokens: parseInt(process.env.MAX_TOKENS) || 4096,
+
+            model: model,
+            max_tokens: parseInt(process.env.MAX_TOKENS) || 8192,
             system: SYSTEM_PROMPT,
             messages: messages,
         });
 
         const responseText = msg.content[0].text;
 
+        // ⭐ Track token usage
+        const usageInfo = tokenTracker.trackRequest(session, msg.usage, model);
+
+        console.log("📊 Token Usage:");
+        console.log(`   Input tokens:  ${usageInfo.requestTokens.input}`);
+        console.log(`   Output tokens: ${usageInfo.requestTokens.output}`);
+        console.log(`   Total tokens:  ${usageInfo.requestTokens.total}`);
+        console.log(`💰 Cost (this request):`);
+        console.log(`   USD: $${usageInfo.requestCost.usd.toFixed(6)}`);
+        console.log(`   THB: ฿${usageInfo.requestCost.thb.toFixed(2)}`);
+        console.log(`📈 Session totals:`);
+        console.log(`   Requests: ${usageInfo.sessionTotals.requests}`);
+        console.log(`   Total tokens: ${usageInfo.sessionTotals.totalTokens}`);
+        console.log(`   Total cost USD: $${usageInfo.sessionTotals.totalCostUSD.toFixed(6)}`);
+        console.log(`   Total cost THB: ฿${usageInfo.sessionTotals.totalCostTHB.toFixed(2)}`);
+
         console.log("Raw response length:", responseText.length);
-        console.log("Raw response:", responseText);
 
         // AGGRESSIVE MARKDOWN REMOVAL
         let jsonText = responseText.trim();
-
-        // Method 1: Remove markdown code blocks with regex
         jsonText = jsonText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
 
-        // Method 2: If still has backticks, find the JSON object directly
         if (jsonText.includes('```')) {
             const firstBrace = jsonText.indexOf('{');
             const lastBrace = jsonText.lastIndexOf('}');
@@ -155,11 +298,7 @@ Task: Please update the code based on my previous requests. Return ONLY valid JS
             }
         }
 
-        // Final cleanup
         jsonText = jsonText.trim();
-
-        console.log("Cleaned JSON (first 200 chars):", jsonText.substring(0, 200));
-        console.log("Cleaned JSON (last 200 chars):", jsonText.substring(jsonText.length - 200));
 
         // Parse with better error handling
         let parsed;
@@ -167,14 +306,7 @@ Task: Please update the code based on my previous requests. Return ONLY valid JS
             parsed = JSON.parse(jsonText);
         } catch (parseError) {
             console.error("JSON Parse Error:", parseError.message);
-            console.error("Failed at position:", parseError.message.match(/position (\d+)/)?.[1]);
-            console.error("Problematic section:", jsonText.substring(
-                Math.max(0, (parseError.message.match(/position (\d+)/)?.[1] || 0) - 50),
-                Math.min(jsonText.length, (parseError.message.match(/position (\d+)/)?.[1] || 0) + 50)
-            ));
 
-            // Last resort: try to extract manually
-            console.log("Attempting manual extraction...");
             const messageMatch = jsonText.match(/"message"\s*:\s*"([^"\\]*(\\.[^"\\]*)*)"/);
             const htmlMatch = jsonText.match(/"html"\s*:\s*"([\s\S]*?)"\s*,\s*"css"/);
             const cssMatch = jsonText.match(/"css"\s*:\s*"([\s\S]*?)"\s*,\s*"js"/);
@@ -198,24 +330,38 @@ Task: Please update the code based on my previous requests. Return ONLY valid JS
         }
 
         console.log("✅ Successfully parsed response");
-        console.log("Message:", parsed.message);
-        console.log("HTML length:", parsed.html?.length || 0);
-        console.log("CSS length:", parsed.css?.length || 0);
-        console.log("JS length:", parsed.js?.length || 0);
 
-        // Send successful response
+        // Send successful response with usage data
         res.json({
             success: true,
             message: parsed.message || 'Code updated successfully',
             html: parsed.html || currentHtml || '',
             css: parsed.css || currentCss || '',
-            js: parsed.js || currentJs || ''
+            js: parsed.js || currentJs || '',
+            // ⭐ Include usage information
+            usage: {
+                sessionId: session,
+                request: {
+                    tokens: usageInfo.requestTokens,
+                    cost: {
+                        usd: usageInfo.requestCost.usd.toFixed(6),
+                        thb: usageInfo.requestCost.thb.toFixed(2)
+                    }
+                },
+                session: {
+                    requests: usageInfo.sessionTotals.requests,
+                    totalTokens: usageInfo.sessionTotals.totalTokens,
+                    totalCost: {
+                        usd: usageInfo.sessionTotals.totalCostUSD.toFixed(6),
+                        thb: usageInfo.sessionTotals.totalCostTHB.toFixed(2)
+                    }
+                }
+            }
         });
 
     } catch (error) {
         console.error("❌ Error processing request:", error.message);
 
-        // Handle specific error types
         if (error.status === 401) {
             return res.status(401).json({
                 success: false,
@@ -343,7 +489,9 @@ app.post('/api/code/from-image', async (req, res) => {
 // Analyze code endpoint (extract colors, get suggestions)
 app.post('/api/code/analyze', async (req, res) => {
     try {
-        const { html, css, js } = req.body;
+        const { html, css, js, sessionId } = req.body;
+        const session = sessionId || `analyze_${Date.now()}`;
+        const model = "claude-haiku-4-5-20251001";
 
         const messages = [{
             role: 'user',
@@ -366,10 +514,13 @@ Return ONLY valid JSON with this format:
         }];
 
         const msg = await anthropic.messages.create({
-            model: "claude-haiku-4-5-20251001",
+            model: model,
             max_tokens: 2048,
             messages: messages,
         });
+
+        // ⭐ Track token usage for analyze
+        const usageInfo = tokenTracker.trackRequest(session, msg.usage, model);
 
         let jsonText = msg.content[0].text.trim()
             .replace(/^```(?:json)?\s*/i, '')
@@ -380,7 +531,16 @@ Return ONLY valid JSON with this format:
         res.json({
             success: true,
             colors: parsed.colors || [],
-            suggestions: parsed.suggestions || 'No suggestions available'
+            suggestions: parsed.suggestions || 'No suggestions available',
+            // ⭐ Include usage information
+            usage: {
+                sessionId: session,
+                tokens: usageInfo.requestTokens,
+                cost: {
+                    usd: usageInfo.requestCost.usd.toFixed(6),
+                    thb: usageInfo.requestCost.thb.toFixed(2)
+                }
+            }
         });
 
     } catch (error) {
@@ -409,4 +569,6 @@ app.listen(PORT, () => {
     console.log(`📝 Health check: http://localhost:${PORT}/api/health`);
     console.log(`🔧 Code update: http://localhost:${PORT}/api/code/update`);
     console.log(`🎨 Code analyze: http://localhost:${PORT}/api/code/analyze`);
+    console.log(`📊 Usage stats: http://localhost:${PORT}/api/usage/:sessionId`);
+    console.log(`💱 Exchange rate: 1 USD = ${USD_TO_THB} THB`);
 });
