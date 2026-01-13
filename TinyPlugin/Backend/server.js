@@ -43,6 +43,28 @@ IMPORTANT:
 Do NOT wrap in markdown code blocks.
 ONLY return the raw JSON object.`;
 
+const IMAGE_TO_CODE_SYSTEM_PROMPT = `You are an expert Frontend Developer. Your task is to convert the provided image of a web layout into high-quality, pixel-perfect HTML and CSS.
+
+CRITICAL JSON FORMATTING RULES:
+1. You MUST respond with ONLY valid JSON
+2. Format:
+{
+  "message": "Summary of what was generated and key design decisions",
+  "html": "The HTML structure (exclude <html> and <body> if possible, wrap in a main container)",
+  "css": "The complete CSS for the layout",
+  "js": "Any necessary JavaScript for interactivity"
+}
+
+IMPLEMENTATION RULES:
+- Use modern CSS (Flexbox, Grid)
+- Use standard fonts (Inter, Roboto, sans-serif)
+- Ensure the layout is responsive
+- Do NOT use external libraries like Tailwind unless absolutely necessary for specific icons
+- All logic and styles must be in the "js" and "css" fields.
+
+Do NOT wrap in markdown code blocks.
+ONLY return the raw JSON object.`;
+
 // Middleware
 app.use(cors({
     origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
@@ -106,8 +128,8 @@ Task: Please update the code based on my previous requests. Return ONLY valid JS
 
         // Call Claude API
         const msg = await anthropic.messages.create({
-            model: process.env.CLAUDE_MODEL || "claude-haiku-4-5-20251001",
-            max_tokens: parseInt(process.env.MAX_TOKENS) || 8192,
+            model: process.env.CLAUDE_MODEL || "claude-3-haiku-20240307",
+            max_tokens: parseInt(process.env.MAX_TOKENS) || 4096,
             system: SYSTEM_PROMPT,
             messages: messages,
         });
@@ -217,6 +239,103 @@ Task: Please update the code based on my previous requests. Return ONLY valid JS
             html: req.body.currentHtml || '',
             css: req.body.currentCss || '',
             js: req.body.currentJs || ''
+        });
+    }
+});
+
+// Endpoint to generate code from image
+app.post('/api/code/from-image', async (req, res) => {
+    try {
+        const { image } = req.body;
+
+        if (!image) {
+            return res.status(400).json({
+                error: 'Invalid request',
+                message: 'Image data is required'
+            });
+        }
+
+        // Extract base64 part
+        const base64Data = image.split(',')[1] || image;
+        const mediaType = image.split(';')[0].split(':')[1] || 'image/png';
+
+        console.log('Sending image reconstruction request to Claude API...');
+
+        const msg = await anthropic.messages.create({
+            model: "claude-3-haiku-20240307",
+            max_tokens: 4096,
+            system: IMAGE_TO_CODE_SYSTEM_PROMPT,
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "image",
+                            source: {
+                                type: "base64",
+                                media_type: mediaType,
+                                data: base64Data
+                            }
+                        },
+                        {
+                            type: "text",
+                            text: "Convert this image into a fully functional web layout. Return ONLY JSON."
+                        }
+                    ]
+                }
+            ],
+        });
+
+        const responseText = msg.content[0].text.trim();
+
+        // Cleanup JSON (same logic as /api/code/update)
+        let jsonText = responseText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
+        if (jsonText.includes('```')) {
+            const firstBrace = jsonText.indexOf('{');
+            const lastBrace = jsonText.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                jsonText = jsonText.substring(firstBrace, lastBrace + 1);
+            }
+        }
+        jsonText = jsonText.trim();
+
+        let parsed;
+        try {
+            parsed = JSON.parse(jsonText);
+        } catch (parseError) {
+            console.error("JSON Parse Error:", parseError.message);
+            // Attempt manual extraction
+            const messageMatch = jsonText.match(/"message"\s*:\s*"([^"\\]*(\\.[^"\\]*)*)"/);
+            const htmlMatch = jsonText.match(/"html"\s*:\s*"([\s\S]*?)"\s*,\s*"css"/);
+            const cssMatch = jsonText.match(/"css"\s*:\s*"([\s\S]*?)"\s*,\s*"js"/);
+            const jsMatch = jsonText.match(/"js"\s*:\s*"([\s\S]*?)"\s*\}/);
+
+            if (htmlMatch) {
+                parsed = {
+                    message: messageMatch ? messageMatch[1] : 'Layout generated successfully',
+                    html: htmlMatch ? htmlMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"') : '',
+                    css: cssMatch ? cssMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"') : '',
+                    js: jsMatch ? jsMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"') : ''
+                };
+            } else {
+                throw parseError;
+            }
+        }
+
+        res.json({
+            success: true,
+            message: parsed.message || 'Layout generated successfully',
+            html: parsed.html || '',
+            css: parsed.css || '',
+            js: parsed.js || ''
+        });
+
+    } catch (error) {
+        console.error("❌ Error generating code from image:", error.message);
+        res.status(500).json({
+            success: false,
+            error: 'Generation failed',
+            message: error.message
         });
     }
 });

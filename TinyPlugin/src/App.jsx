@@ -10,11 +10,12 @@ function App() {
         selector: '#editor',
 
         external_plugins: {
-          aiChat: '/plugins/ai-chat/plugin.js'
+          aiChat: '/plugins/ai-chat/plugin.js',
+          webRef: '/plugins/web-ref/plugin.js',
         },
 
-        plugins: 'code aiChat',
-        toolbar: 'undo redo | code | aiChat ai',
+        plugins: 'code aiChat image webRef',
+        toolbar: 'undo redo | code | aiChat ai | image webRef',
         height: '100vh',
         width: '100vw',
         license_key: 'gpl',
