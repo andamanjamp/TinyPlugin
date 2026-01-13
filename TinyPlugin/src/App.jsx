@@ -13,8 +13,8 @@ function App() {
           aiChat: '/plugins/ai-chat/plugin.js'
         },
 
-        plugins: 'code aiChat',
-        toolbar: 'undo redo | code | aiChat ai',
+        plugins: 'code aiChat image',
+        toolbar: 'undo redo | code | aiChat ai| image',
         height: '100vh',
         width: '100vw',
         license_key: 'gpl',
