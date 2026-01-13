@@ -114,12 +114,28 @@ CRITICAL JSON FORMATTING RULES:
   "css": "Complete CSS code with proper escaping",
   "js": "Complete JavaScript code with proper escaping"
 }
+
+CRITICAL JAVASCRIPT SAFETY RULES:
+1. ALWAYS check if elements exist before adding event listeners or manipulating them
+2. Use null checks for ALL DOM queries: if (element) { ... }
+3. Each component MUST be self-contained - do NOT reference elements from other components
+4. Example of safe code:
+   const loginBtn = document.querySelector('.nav-login-btn');
+   if (loginBtn) {
+     loginBtn.addEventListener('click', function() { ... });
+   }
+5. NEVER assume external elements exist - wrap all DOM manipulations in existence checks
+6. If creating a component that depends on other elements (like modals needing trigger buttons), either:
+   - Include ALL required elements in the HTML, OR
+   - Add clear comments explaining dependencies, OR
+   - Make the component work standalone with fallback behavior
+
 IMPORTANT: 
 - Do NOT include <script src="script.js"> or <link rel="stylesheet" href="style.css"> tags.
 - Design: ALWAYS create full-width, edge-to-edge layouts unless a specific component is requested.
 - Scaling: Ensure the main container/body fills the entire viewport width (100%) and height (100vh) where appropriate. Avoid small fixed-width "containers" in the middle of the page.
 - All logic and styles must be in the "js" and "css" fields or inlined if necessary.
-- Use only the code part that must be changed or added. Do NOT include any code that is not necessary.
+- All JavaScript code must be defensive and handle missing elements gracefully without throwing errors.
 
 Do NOT wrap in markdown code blocks.
 ONLY return the raw JSON object.`;
