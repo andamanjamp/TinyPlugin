@@ -140,27 +140,39 @@ IMPORTANT:
 Do NOT wrap in markdown code blocks.
 ONLY return the raw JSON object.`;
 
-const IMAGE_TO_CODE_SYSTEM_PROMPT = `You are an expert Frontend Developer. Your task is to convert the provided image of a web layout into high-quality, pixel-perfect HTML and CSS.
+const IMAGE_TO_CODE_SYSTEM_PROMPT = `You are an expert Frontend Developer specializing in converting design mockups to production-ready code.
 
-CRITICAL JSON FORMATTING RULES:
-1. You MUST respond with ONLY valid JSON
-2. Format:
+TASK: Convert the provided design image into pixel-perfect HTML and CSS that matches the design exactly.
+
+RESPONSE FORMAT - You MUST respond with ONLY this JSON structure (no markdown, no explanations):
 {
-  "message": "Summary of what was generated and key design decisions",
-  "html": "The HTML structure (exclude <html> and <body> if possible, wrap in a main container)",
-  "css": "The complete CSS for the layout",
-  "js": "Any necessary JavaScript for interactivity"
+  "message": "Brief summary of what was created (1-2 sentences)",
+  "html": "Complete HTML structure with semantic markup",
+  "css": "Complete CSS with exact colors, spacing, and typography from the image",
+  "js": "JavaScript for any interactive elements (empty string if none needed)"
 }
 
-IMPLEMENTATION RULES:
-- Use modern CSS (Flexbox, Grid)
-- Use standard fonts (Inter, Roboto, sans-serif)
-- Ensure the layout is responsive
-- Do NOT use external libraries like Tailwind unless absolutely necessary for specific icons
-- All logic and styles must be in the "js" and "css" fields.
+CRITICAL REQUIREMENTS:
+1. COLOR ACCURACY: Extract exact colors from the image and use them precisely
+2. LAYOUT FIDELITY: Match spacing, alignment, and proportions exactly
+3. TYPOGRAPHY: Match font sizes, weights, and styles as closely as possible
+4. RESPONSIVE: Make it mobile-friendly with breakpoints
+5. MODERN CSS: Use Flexbox/Grid, CSS variables for colors
+6. NO EXTERNAL LIBS: No Tailwind, Bootstrap, or CDN dependencies
+7. PLACEHOLDER IMAGES: Use via.placeholder.com or similar for any images
+8. FULL-WIDTH: Make layouts edge-to-edge unless it's clearly a centered component
+9. PRODUCTION-READY: Clean, well-structured, commented code
 
-Do NOT wrap in markdown code blocks.
-ONLY return the raw JSON object.`;
+IMPORTANT JSON FORMATTING:
+- Escape all special characters: newlines as \\n, quotes as \\"
+- Do NOT wrap response in markdown code blocks
+- Return ONLY the raw JSON object
+
+Example of proper escaping:
+{
+  "html": "<div class=\\"container\\">\\n  <h1>Title</h1>\\n</div>",
+  "css": ".container {\\n  display: flex;\\n}"
+}`;
 
 // Middleware
 app.use(cors({
@@ -424,8 +436,8 @@ app.post('/api/code/from-image', async (req, res) => {
         console.log('Sending image reconstruction request to Claude API...');
 
         const msg = await anthropic.messages.create({
-            model: "claude-3-haiku-20240307",
-            max_tokens: 4096,
+            model: process.env.CLAUDE_MODEL || "claude-sonnet-4-5-20250929",
+            max_tokens: 16000,
             system: IMAGE_TO_CODE_SYSTEM_PROMPT,
             messages: [
                 {
@@ -507,7 +519,7 @@ app.post('/api/code/analyze', async (req, res) => {
     try {
         const { html, css, js, sessionId } = req.body;
         const session = sessionId || `analyze_${Date.now()}`;
-        const model = "claude-haiku-4-5-20251001";
+        const model = process.env.CLAUDE_MODEL || "claude-haiku-4-5-20251001";
 
         const messages = [{
             role: 'user',
